@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>家人隐私库</title>
+<style>
+  :root { --bg:#0f1115; --card:#171a21; --line:#2a2f3a; --fg:#e8ebf0; --mut:#98a2b3; --acc:#4c8dff; --warn:#ffb020; --danger:#ff5c5c; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.6 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 18px 14px 80px; }
+  h1 { font-size: 20px; margin: 8px 0 4px; }
+  .sub { color: var(--mut); font-size: 13px; margin-bottom: 16px; }
+  .card { background: var(--card); border:1px solid var(--line); border-radius: 12px; padding: 14px; margin-bottom: 14px; }
+  label { display:block; font-size:12px; color:var(--mut); margin: 8px 0 4px; }
+  input, textarea, button { font: inherit; }
+  input[type=text], textarea {
+    width:100%; background:#0d0f13; color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:9px 10px; }
+  textarea { min-height: 60px; resize: vertical; }
+  button { background:#222833; color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:8px 12px; cursor:pointer; }
+  button.primary { background: var(--acc); border-color: var(--acc); color:#fff; font-weight:600; }
+  button.ghost { background:transparent; }
+  button.danger { color: var(--danger); }
+  button.small { padding:5px 9px; font-size:13px; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .fieldrow { display:grid; grid-template-columns: 130px 1fr auto; gap:8px; margin-bottom:8px; align-items:center; }
+  .fieldrow .acts { display:flex; gap:6px; }
+  .hint { color:var(--mut); font-size:12px; }
+  .pill { display:inline-block; background:#20262f; border:1px solid var(--line); color:var(--mut); border-radius:999px; padding:2px 8px; font-size:12px; margin:0 6px 6px 0; cursor:pointer; }
+  .pill:hover { color:var(--fg); border-color:var(--acc); }
+  .top { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
+  .msg { min-height: 20px; font-size:13px; color: var(--mut); }
+  .msg.ok { color:#5ad19b; } .msg.err { color: var(--danger); }
+  .hidden { display:none !important; }
+  code { background:#0d0f13; border:1px solid var(--line); padding:1px 6px; border-radius:6px; word-break:break-all; }
+  @media (max-width: 560px) { .fieldrow { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🔐 家人隐私库</h1>
+  <div class="sub">只存在本机加密文件里；<b>不会进入 AI 上下文</b>。查看方式：在飞书对 OpenClaw 说「把 XX 的 YY 发我」，由脚本直接私聊发给你。</div>
+
+  <!-- 此设备无权访问 -->
+  <div id="blocked" class="card hidden">
+    <div class="top"><b>🚫 此设备无权访问</b></div>
+    <div class="hint">家人隐私库只对指定的网络来源开放（由服务端 <code>access.allowCidrs</code> / <code>denyIps</code> 决定）。<br>
+      如果你认为这是误判，让管理员调整白名单/黑名单。</div>
+  </div>
+
+  <!-- 打不开（服务端错误） -->
+  <div id="broken" class="card hidden">
+    <div class="top"><b>⚠️ 打不开保险库</b></div>
+    <div class="hint" id="broken_msg"></div>
+  </div>
+
+  <!-- 编辑 -->
+  <div id="editor" class="hidden">
+    <div class="card">
+      <div class="top">
+        <div><b>编辑</b> <span class="hint" id="e_meta"></span></div>
+        <div class="row">
+          <button class="primary" onclick="save(false)">保存</button>
+        </div>
+      </div>
+      <div id="e_mode" class="hint"></div>
+      <div id="e_msg" class="msg"></div>
+      <div class="row" style="margin-top:10px"><button onclick="addPerson()">＋ 添加家人</button>
+        <span class="hint">常用字段：</span>
+        <span id="presets"></span>
+      </div>
+    </div>
+    <div id="people"></div>
+  </div>
+</div>
+
+<script>
+const FIELDS = ['身份证号','手机号','生日','护照号','银行卡','社保卡','地址','紧急联系人','备注信息'];
+let state = { people: [] };
+let dirty = false, saving = false;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+async function api(path, opts) {
+  const r = await fetch(path, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opts || {}));
+  let data = {};
+  try { data = await r.json(); } catch (e) {}
+  return { status: r.status, data };
+}
+function msg(el, text, kind) { const e = $(el); e.textContent = text || ''; e.className = 'msg' + (kind ? ' ' + kind : ''); }
+function copyText(t) { navigator.clipboard && navigator.clipboard.writeText(t); }
+function mask(v) { const s = String(v || ''); if (s.length <= 6) return '•'.repeat(s.length); return s.slice(0, 3) + '•'.repeat(Math.max(4, s.length - 7)) + s.slice(-4); }
+function showOnly(id) { ['blocked','broken','editor'].forEach(x => $(x).classList.add('hidden')); $(id).classList.remove('hidden'); }
+
+async function boot() {
+  const st = await api('/api/state');
+  if (st.status === 403) return showOnly('blocked');
+  if (st.status !== 200) {
+    showOnly('broken');
+    $('broken_msg').textContent = '服务返回 ' + st.status + '（' + ((st.data && st.data.error) || '未知错误') + '）。若是 api_key_unavailable，说明本机 DPAPI 密钥文件丢了，数据无法解开。';
+    return;
+  }
+  enterEditor(st.data.vault);
+}
+function enterEditor(vault) {
+  state = { people: (vault && vault.people) ? JSON.parse(JSON.stringify(vault.people)) : [] };
+  showOnly('editor');
+  $('e_mode').innerHTML = '当前模式：<b>网络准入</b>——<code>access.allowCidrs</code> 内的设备可直接读写，<code>denyIps</code> 优先拒绝。数据加密存放（密钥由服务端单独保管）。改动会自动保存。';
+  $('e_meta').textContent = state.people.length + ' 位家人';
+  $('presets').innerHTML = FIELDS.map(f => `<span class="pill" onclick="addFieldToLast('${f}')">${f}</span>`).join('');
+  render();
+}
+function render() {
+  $('e_meta').textContent = state.people.length + ' 位家人';
+  $('people').innerHTML = state.people.map((p, i) => `
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <div class="row" style="flex:1">
+          <div style="flex:1"><label>姓名</label><input type="text" value="${esc(p.name)}" oninput="upd(${i},'name',this.value)"></div>
+          <div style="flex:1"><label>称谓（你怎么叫他/她）</label><input type="text" value="${esc(p.appellation)}" placeholder="爸爸 / 妈妈 / 老婆 / 儿子" oninput="upd(${i},'appellation',this.value)"></div>
+        </div>
+        <div><label>&nbsp;</label><button class="small danger" onclick="delPerson(${i})">删除</button></div>
+      </div>
+      <label style="margin-top:12px">字段</label>
+      <div id="fields_${i}">
+        ${Object.entries(p.fields || {}).map(([k, v], fi) => fieldRow(i, fi, k, v)).join('')}
+      </div>
+      <div class="row"><button class="small" onclick="addField(${i})">＋ 添加字段</button></div>
+      <label>备注（可选）</label><textarea oninput="upd(${i},'notes',this.value)">${esc(p.notes)}</textarea>
+    </div>`).join('') || '<div class="card hint">还没有记录。点上面「＋ 添加家人」开始。</div>';
+}
+function fieldRow(i, fi, k, v) {
+  return `<div class="fieldrow" data-fi="${fi}">
+    <input type="text" value="${esc(k)}" placeholder="字段名" oninput="updField(${i},${fi},'k',this.value)">
+    <input type="text" value="${esc(v)}" placeholder="值" oninput="updField(${i},${fi},'v',this.value)" autocomplete="off">
+    <div class="acts">
+      <button class="small ghost" onclick="toggleMask(this)">隐藏</button>
+      <button class="small ghost" onclick="copyText(this.parentNode.parentNode.children[1].value)">复制</button>
+      <button class="small danger" onclick="delField(${i},${fi})">删</button>
+    </div></div>`;
+}
+function toggleMask(btn) {
+  const inp = btn.parentNode.parentNode.children[1];
+  if (inp.dataset.masked === '1') { inp.value = inp.dataset.real || inp.value; inp.dataset.masked = '0'; btn.textContent = '隐藏'; }
+  else { inp.dataset.real = inp.value; inp.value = mask(inp.value); inp.dataset.masked = '1'; btn.textContent = '显示'; }
+}
+function upd(i, k, v) { state.people[i][k] = v; markDirty(); }
+function updField(i, fi, which, v) {
+  const keys = Object.keys(state.people[i].fields || {});
+  const oldKey = keys[fi];
+  if (oldKey === undefined) return;
+  if (which === 'k') { const val = state.people[i].fields[oldKey]; delete state.people[i].fields[oldKey]; state.people[i].fields[v || oldKey] = val; }
+  else { state.people[i].fields[oldKey] = v; }
+  markDirty();
+}
+function addPerson() { state.people.push({ name: '', appellation: '', fields: {}, notes: '' }); markDirty(); render(); }
+function delPerson(i) { if (confirm('删除这位家人的全部记录？')) { state.people.splice(i, 1); markDirty(); render(); } }
+function addField(i) { state.people[i].fields['新字段' + (Object.keys(state.people[i].fields).length + 1)] = ''; markDirty(); render(); }
+function addFieldToLast(f) {
+  if (!state.people.length) { addPerson(); }
+  const i = state.people.length - 1;
+  if (!state.people[i].fields[f]) state.people[i].fields[f] = '';
+  markDirty(); render();
+}
+function delField(i, fi) { const k = Object.keys(state.people[i].fields)[fi]; delete state.people[i].fields[k]; markDirty(); render(); }
+function markDirty() { dirty = true; msg('e_msg', '有未保存的改动…', ''); }
+async function save(auto) {
+  if (saving) return;
+  saving = true;
+  const payload = state.people.map(p => ({ name: p.name, appellation: p.appellation, fields: p.fields, notes: p.notes }));
+  const { status, data } = await api('/api/save', { method: 'POST', body: JSON.stringify({ people: payload }) });
+  saving = false;
+  if (status === 200) {
+    dirty = false;
+    const t = new Date().toLocaleTimeString();
+    msg('e_msg', (auto === true ? '已自动保存 ' : '已加密保存 ✅ ') + t, 'ok');
+  } else {
+    msg('e_msg', '保存失败：' + (data.error || status), 'err');
+  }
+}
+// 每 5 秒自动保存有改动的部分；有未保存改动时离开页面会提醒
+setInterval(() => { if (dirty && !saving) save(true); }, 5000);
+window.addEventListener('beforeunload', (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
+boot();
+</script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+{
+  "bind": "127.0.0.1",
+  "port": 8791,
+
+  "dataFile": "./data/vault.dat",
+  "keyFile": "./data/vault.key",
+  "tokenFile": "./data/api-token.txt",
+  "uiFile": "./ui.html",
+
+  "keyMode": "auto",
+  "trustProxy": true,
+
+  "access": {
+    "autoInit": true,
+    "allowCidrs": ["100.64.0.0/10"],
+    "denyIps": []
+  },
+
+  "_note": "Relative paths resolve against this file's directory. keyMode: auto | dpapi | file. access.allowCidrs is the ONLY gate for the web UI - keep bind on 127.0.0.1 and put a proxy in front."
+}

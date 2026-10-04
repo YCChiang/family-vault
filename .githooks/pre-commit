@@ -1,0 +1,20 @@
+#!/bin/sh
+# Refuse to commit data, keys, tokens or a real config.
+# Enable once with:  powershell -ExecutionPolicy Bypass -File scripts/install-hooks.ps1
+root=$(git rev-parse --show-toplevel 2>/dev/null) || root="."
+guard="$root/scripts/check-no-data.ps1"
+
+if [ -f "$guard" ]; then
+  if command -v pwsh >/dev/null 2>&1; then
+    pwsh -NoProfile -ExecutionPolicy Bypass -File "$guard" || exit 1
+  elif command -v powershell.exe >/dev/null 2>&1; then
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$guard" || exit 1
+  else
+    # no PowerShell: fall back to a plain grep over the staged file names
+    if git diff --cached --name-only | grep -Ei '(^|/)(config\.json|api-token\.txt)|\.(dat|key|dpapi|pem|pfx)$|^vault-send-.*\.txt$'; then
+      echo "pre-commit: refusing to commit data/key files (see scripts/check-no-data.ps1)" >&2
+      exit 1
+    fi
+  fi
+fi
+exit 0

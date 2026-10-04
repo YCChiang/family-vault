@@ -1,0 +1,28 @@
+# ---------------------------------------------------------------------------
+# NEVER commit real data, keys, tokens or configs. This repository is code only.
+# ---------------------------------------------------------------------------
+
+# runtime data (the vault itself)
+data/
+*.dat
+*.key
+*.dpapi
+api-token.txt
+
+# real configuration (copy config.example.json instead)
+config.json
+config.*.json
+!config.example.json
+
+# transient plaintext used while forwarding a value to a chat app
+tmp/
+vault-send-*.txt
+*.log
+*.log.err
+
+# editors / OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store
