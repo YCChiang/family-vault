@@ -84,8 +84,8 @@ function Get-VaultPersonNames {
     param([string]$ConfigPath)
     $idx = Get-VaultIndex -ConfigPath $ConfigPath
     return (@($idx.people) | ForEach-Object {
-            if ($_.appellation) { "$($_.name)（$($_.appellation)）" } else { $_.name }
-        }) -join '、'
+            if ($_.appellation) { "$($_.name) ($($_.appellation))" } else { $_.name }
+        }) -join ', '
 }
 
 # resolve a name OR appellation to one person; returns @{ name; appellation; fields; matchedBy }

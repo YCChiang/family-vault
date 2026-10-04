@@ -1,10 +1,14 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    List the people in the vault (names, appellations, field labels - never values).
+    List the people in the vault: names, appellations and field labels - never values.
+.DESCRIPTION
+    Safe to show to a chat agent. Use it to discover which person/field to ask for.
+.PARAMETER Name
+    Optional. Person name OR appellation (e.g. mom / dad / uncle), partial match allowed.
 .EXAMPLE
     powershell -NoProfile -File vault-list.ps1
-    powershell -NoProfile -File vault-list.ps1 -Name 妈妈
+    powershell -NoProfile -File vault-list.ps1 -Name mom
 #>
 [CmdletBinding()]
 param(
@@ -22,21 +26,21 @@ try {
     if ($Name) {
         $hit = Resolve-VaultPerson -Query $Name -ConfigPath $ConfigPath
         $people = @($people | Where-Object { $_.name -eq $hit.name })
-        if ($hit.matchedBy -eq 'appellation') { Write-Output ("（「{0}」matched by appellation -> {1}）" -f $Name, $hit.name) }
+        if ($hit.matchedBy -eq 'appellation') { Write-Output ("[resolved] '{0}' -> {1} (by appellation)" -f $Name, $hit.name) }
     }
 
     if ($people.Count -eq 0) { Write-Output '(vault is empty)'; exit 0 }
 
     foreach ($p in $people) {
-        $app = if ($p.appellation) { "（$($p.appellation)）" } else { '' }
-        Write-Output ("姓名：{0}{1}" -f $p.name, $app)
+        $app = if ($p.appellation) { " ($($p.appellation))" } else { '' }
+        Write-Output ("name: {0}{1}" -f $p.name, $app)
         $fields = @($p.fields)
-        if ($fields.Count -gt 0) { Write-Output ("  可查字段：{0}" -f ($fields -join '、')) }
-        else { Write-Output '  可查字段：（无）' }
-        if ($p.hasNotes) { Write-Output '  另有备注（备注不对 API 开放）' }
+        if ($fields.Count -gt 0) { Write-Output ("  fields: {0}" -f ($fields -join ', ')) }
+        else { Write-Output '  fields: (none)' }
+        if ($p.hasNotes) { Write-Output '  notes: present (not exposed to the API)' }
         Write-Output ''
     }
 } catch {
-    [Console]::Error.WriteLine("[错误] $($_.Exception.Message)")
+    [Console]::Error.WriteLine("[error] $($_.Exception.Message)")
     exit 1
 }

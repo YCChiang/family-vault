@@ -1,6 +1,7 @@
-﻿# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 #  Register family-vault as a Windows service with NSSM (https://nssm.cc/).
-#  Defaults to keyMode dpapi and a loopback bind; see config.example.json.
+#  The service runs the code in this repository; all data and the real config
+#  stay OUTSIDE it (see config.example.json and SECURITY.md).
 # ---------------------------------------------------------------------------
 [CmdletBinding()]
 param(
@@ -12,22 +13,20 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-
 if (-not $RepoRoot) { $RepoRoot = Split-Path -Parent $PSScriptRoot }
 if (-not $NodePath) { $NodePath = (Get-Command node -ErrorAction Stop).Source }
 if (-not $ConfigPath) { $ConfigPath = Join-Path $RepoRoot 'config.json' }
-if (-not $LogDir) { $LogDir = Join-Path $RepoRoot 'logs' }
+if (-not $LogDir) { $LogDir = Join-Path (Split-Path -Parent $ConfigPath) 'logs' }
 $server = Join-Path $RepoRoot 'vault-server.mjs'
 
-foreach ($p in @($NodePath, $server)) { if (-not (Test-Path -LiteralPath $p)) { throw "找不到：$p" } }
+foreach ($p in @($NodePath, $server)) { if (-not (Test-Path -LiteralPath $p)) { throw "not found: $p" } }
 if (-not (Test-Path -LiteralPath $ConfigPath)) {
-    throw "找不到配置 $ConfigPath —— 先复制 config.example.json 再改。"
+    throw "config not found: $ConfigPath - copy config.example.json somewhere outside the repo first."
 }
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 
 $nssm = (Get-Command nssm -ErrorAction SilentlyContinue).Source
-if (-not $nssm) { throw '找不到 nssm（choco install nssm / scoop install nssm），或手动创建服务。' }
+if (-not $nssm) { throw 'nssm not found (choco install nssm / scoop install nssm), or create the service manually.' }
 
 if (Get-Service $ServiceName -ErrorAction SilentlyContinue) {
     & $nssm stop $ServiceName | Out-Null
@@ -54,5 +53,5 @@ try {
     $h = Invoke-RestMethod -Uri "http://127.0.0.1:$port/api/health" -TimeoutSec 10
     "health: $($h | ConvertTo-Json -Compress)"
 } catch {
-    "服务已注册，但健康检查失败：$($_.Exception.Message)（看 $LogDir）"
+    "service registered, but the health check failed: $($_.Exception.Message) (check $LogDir)"
 }

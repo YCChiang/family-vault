@@ -140,6 +140,24 @@ agent fetch one value and send it straight to the owner's Feishu (Lark) DM, so t
 never appears in the agent's own context. They are examples — adapt the delivery step to
 your chat platform.
 
+All PowerShell in this repository is deliberately **ASCII-only**: Windows PowerShell 5.1
+decodes `.ps1` files as ANSI unless they start with a UTF-8 BOM, so ASCII source works in
+every environment. Values and field labels are still full Unicode — they only ever travel
+through UTF-8 files and JSON, never through script source.
+
+### Recommended deployment shape
+
+```
+<outside any repo>/family-vault/     runtime: config.json, vault.dat, vault.key,
+                                     api-token.txt, tmp/, logs/
+<clean git clone>/                   code only — the service runs this
+```
+
+Clone the repository where the service can reach it, keep config and data in a separate
+directory, and point the service at the config (that is what `install-service.ps1` does via
+`VAULT_CONFIG`). Updating the deployment is then `git pull` + restart, and the working tree
+never contains data that could be committed by accident.
+
 ## Backups
 
 Copy `data/` somewhere safe (it is tiny). A stolen copy is useless without the key file:

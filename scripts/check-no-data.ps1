@@ -1,10 +1,10 @@
-﻿# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 #  Push guard: refuse to publish anything that looks like data, a key or a token.
 #
 #  What matters is what git would actually upload, so:
-#    * a matching file that is tracked or staged      -> FAIL (would be pushed)
-#    * a matching file present but NOT ignored        -> FAIL (a later `git add -A` would push it)
-#    * a matching file present but git-ignored        -> WARN only (stays local)
+#    * a matching file that is tracked or staged   -> FAIL (would be pushed)
+#    * a matching file present but NOT ignored     -> FAIL (a later `git add -A` would push it)
+#    * a matching file present but git-ignored     -> WARN only (stays local)
 #
 #  Usage:  powershell -ExecutionPolicy Bypass -File scripts/check-no-data.ps1
 #  Exit code 0 = nothing will be published, 1 = blocked.
@@ -39,7 +39,7 @@ if ($isRepo) {
     $tracked = @(& git -C $RepoRoot ls-files)
     $staged = @(& git -C $RepoRoot diff --cached --name-only)
     foreach ($f in (($tracked + $staged) | Sort-Object -Unique)) {
-        if (Test-SensitiveName (Split-Path -Leaf $f)) { $blocked += "会被上传：$f" }
+        if (Test-SensitiveName (Split-Path -Leaf $f)) { $blocked += "would be pushed: $f" }
     }
 }
 
@@ -55,11 +55,11 @@ foreach ($f in $present) {
     if ($isRepo) {
         & git -C $RepoRoot check-ignore -q -- $rel
         if ($LASTEXITCODE -eq 0) {
-            $warned += "$rel（已被 .gitignore 排除，只留在本机）"
+            $warned += "$rel (git-ignored, stays local)"
             continue
         }
     }
-    $blocked += "未忽略：$rel —— 一旦 git add -A 就会被上传"
+    $blocked += "not ignored: $rel - a plain 'git add -A' would push it"
 }
 
 # --- 3) obvious secrets inside tracked text files --------------------------
@@ -70,24 +70,25 @@ if ($isRepo) {
         $full = Join-Path $RepoRoot $t
         if (-not (Test-Path -LiteralPath $full)) { continue }
         $hit = Select-String -LiteralPath $full -Pattern $secretish -ErrorAction SilentlyContinue
-        if ($hit) { $blocked += "疑似密钥内容：$t（第 $($hit[0].LineNumber) 行）" }
+        if ($hit) { $blocked += "looks like a secret: $t (line $($hit[0].LineNumber))" }
     }
 }
 
 if ($warned.Count -gt 0) {
-    Write-Output '本机存在这些文件（不会上传，仅提醒）：'
+    Write-Output 'Local-only files (will NOT be uploaded):'
     $warned | Sort-Object -Unique | ForEach-Object { Write-Output "   - $_" }
     Write-Output ''
 }
 
 if ($blocked.Count -gt 0) {
-    Write-Output '❌ 会被上传的内容，已阻止：'
+    Write-Output 'BLOCKED - these would end up on the remote:'
     $blocked | Sort-Object -Unique | ForEach-Object { Write-Output "   - $_" }
     Write-Output ''
-    Write-Output '数据 / 密钥 / 真实配置一律不进仓库。把它们移出仓库目录（例如 %LOCALAPPDATA%\family-vault\），'
-    Write-Output '用 VAULT_CONFIG 环境变量指向，或确认 .gitignore 覆盖它们。'
+    Write-Output 'Data, keys and real configs must never enter the repository. Move them outside the'
+    Write-Output 'repo directory (e.g. %LOCALAPPDATA%\family-vault\) and point VAULT_CONFIG at them,'
+    Write-Output 'or make sure .gitignore covers them.'
     exit 1
 }
 
-Write-Output '✅ 什么都没问题：没有会被上传的数据文件、密钥、令牌或真实配置。'
+Write-Output 'OK: nothing that looks like data, a key, a token or a real config would be published.'
 exit 0
