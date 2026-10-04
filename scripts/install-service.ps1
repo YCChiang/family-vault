@@ -48,7 +48,7 @@ if (Get-Service $ServiceName -ErrorAction SilentlyContinue) {
 
 Start-Sleep -Seconds 2
 Get-Service $ServiceName | Select-Object Name, Status, StartType | Format-Table -AutoSize
-$port = (Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json).port
+$port = ([System.IO.File]::ReadAllText($ConfigPath, [System.Text.Encoding]::UTF8).TrimStart([char]0xFEFF) | ConvertFrom-Json).port
 try {
     $h = Invoke-RestMethod -Uri "http://127.0.0.1:$port/api/health" -TimeoutSec 10
     "health: $($h | ConvertTo-Json -Compress)"
